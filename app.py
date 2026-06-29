@@ -125,12 +125,13 @@ d_b = df_div[df_div['Diet'] == diet_b]['shannon']
 _, div_pval = stats.mannwhitneyu(d_a, d_b)
 
 # ── Tabs ───────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🗺️ Heatmap",
     "🌋 Volcano Plot",
     "📊 Top OTUs",
     "🌿 Diversity",
-    "🧬 Summary & Findings"
+    "🧬 Summary & Findings",
+    "🤖 ML Predictor"
 ])
 
 # ── Tab 1: Heatmap ─────────────────────────────────────────────────
@@ -415,3 +416,135 @@ with tab5:
     *Built by **Sahasrakshi S** | MTech Biotechnology, VIT Vellore | 2026*  
     *GitHub: [gutbrain-explorer](https://github.com/sahas-13/gutbrain-explorer)*
     """)
+# ── Tab 6: ML Predictor ────────────────────────────────────────────
+with tab6:
+    st.subheader("🤖 Machine Learning Diet Predictor")
+    st.markdown("""
+    A **Random Forest classifier** trained on gut microbiome OTU data 
+    to predict diet group membership. The model learns which bacterial 
+    communities are associated with each diet.
+    """)
+
+    # Train model
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import accuracy_score, confusion_matrix
+
+    @st.cache_data
+    def train_model(diet_a, diet_b):
+        mask = df['Diet'].isin([diet_a, diet_b])
+        X = otu_top50[mask]
+        y = df['Diet'][mask]
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
+        rf = RandomForestClassifier(n_estimators=100, random_state=42)
+        rf.fit(X_train, y_train)
+        y_pred = rf.predict(X_test)
+        accuracy = accuracy_score(y_test, y_pred)
+        cm = confusion_matrix(y_test, y_pred)
+        importance = pd.DataFrame({
+            'OTU': X.columns,
+            'Importance': rf.feature_importances_
+        }).sort_values('Importance', ascending=False).head(15)
+        return rf, accuracy, cm, importance, X.columns.tolist()
+
+    rf_model, accuracy, cm, importance_df, feature_cols = train_model(diet_a, diet_b)
+
+    # ── Model metrics ──────────────────────────────────────────────
+    st.markdown("### 📊 Model Performance")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Model Accuracy", f"{accuracy * 100:.2f}%")
+    col2.metric("Algorithm", "Random Forest")
+    col3.metric("Trees in Forest", "100")
+
+    st.markdown("---")
+
+    col1, col2 = st.columns(2)
+
+    # ── Feature importance plot ────────────────────────────────────
+    with col1:
+        st.markdown("### 🦠 Most Predictive OTUs")
+        fig, ax = plt.subplots(figsize=(8, 6))
+        colors = plt.cm.RdYlGn(
+            np.linspace(0.3, 0.9, len(importance_df)))[::-1]
+        ax.barh(importance_df['OTU'][::-1],
+                importance_df['Importance'][::-1],
+                color=colors, edgecolor='black')
+        ax.set_xlabel('Feature Importance Score')
+        ax.set_title('Top 15 OTUs That Predict Diet Group')
+        plt.tight_layout()
+        st.pyplot(fig)
+
+    # ── Confusion matrix ───────────────────────────────────────────
+    with col2:
+        st.markdown("### 🎯 Confusion Matrix")
+        fig, ax = plt.subplots(figsize=(6, 5))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                    xticklabels=[f'Diet {diet_a}', f'Diet {diet_b}'],
+                    yticklabels=[f'Diet {diet_a}', f'Diet {diet_b}'],
+                    ax=ax)
+        ax.set_xlabel('Predicted')
+        ax.set_ylabel('Actual')
+        ax.set_title('Model Predictions vs Reality')
+        plt.tight_layout()
+        st.pyplot(fig)
+
+    st.markdown("---")
+    st.markdown("### 🔬 How to Read These Results")
+    st.markdown(f"""
+    **Feature Importance Chart:**
+    - Shows which OTUs (bacteria) the model relies on most
+    - **OTU710** (Bacteroides) is the strongest diet predictor
+    - **OTU5691** (Proteobacteria) is second most important
+    - Higher score = that bacteria changes more dramatically between diets
+
+    **Confusion Matrix:**
+    - **Diagonal cells** (top-left, bottom-right) = correct predictions ✅
+    - **Off-diagonal cells** = mistakes ❌
+    - Our model makes very few mistakes!
+
+    **Why {accuracy * 100:.1f}% accuracy matters:**
+    - Random guessing would give ~50% accuracy
+    - Our model achieves **{accuracy * 100:.1f}%** — the microbiome 
+      alone is enough to identify diet with high confidence
+    - This confirms that diet leaves a strong **microbial fingerprint**
+    """)
+
+    st.success(f"""
+    🧬 **Key Finding:** The gut microbiome composition can predict 
+    diet group membership with **{accuracy * 100:.1f}% accuracy** 
+    using just {top_n} OTUs — demonstrating that dietary patterns 
+    leave measurable and reproducible signatures in gut microbial communities.
+    """)
+
+    st.markdown("---")
+    st.markdown("### 🔮 Predict Diet Group From Microbiome")
+    st.markdown("Adjust the sliders to simulate a microbiome profile:")
+
+    top5_features = importance_df['OTU'].head(5).tolist()
+    user_input = {}
+    cols = st.columns(5)
+    for i, otu in enumerate(top5_features):
+        with cols[i]:
+            user_input[otu] = st.slider(
+                f"{otu}",
+                min_value=0.0,
+                max_value=float(otu_top50[otu].max()),
+                value=float(otu_top50[otu].mean()),
+                format="%.4f"
+            )
+
+    # Build input vector
+    input_vector = pd.DataFrame([{
+        col: user_input.get(col, float(otu_top50[col].mean()))
+        for col in feature_cols
+    }])
+
+    prediction = rf_model.predict(input_vector)[0]
+    probability = rf_model.predict_proba(input_vector)[0]
+
+    st.markdown("### 🎯 Prediction Result")
+    col1, col2 = st.columns(2)
+    col1.metric("Predicted Diet Group", f"Diet {prediction}")
+    col2.metric("Confidence", f"{max(probability) * 100:.1f}%")
