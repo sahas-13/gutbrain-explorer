@@ -20,12 +20,10 @@ st.markdown("---")
 # ── Load data ──────────────────────────────────────────────────────
 @st.cache_data
 def load_data():
-    df = pd.read_csv('MicrobiomeWithMetadata.csv')
+    df = pd.read_csv('microbiome_top50.csv')
     metadata_cols = ['Diet', 'Source', 'Donor', 'CollectionMet', 'Sex']
     otu_cols = [col for col in df.columns if col.startswith('OTU')]
-    otu_table = df[otu_cols]
-    top50 = otu_table.mean().sort_values(ascending=False).head(50).index.tolist()
-    otu_top50 = otu_table[top50]
+    otu_top50 = df[otu_cols]
     return df, otu_top50
 
 df, otu_top50 = load_data()
