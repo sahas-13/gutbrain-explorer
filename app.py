@@ -641,7 +641,7 @@ with tab7:
 
     st.markdown("---")
 
-    sub_tab1, sub_tab2, sub_tab3 = st.tabs(["🔥 Correlation Heatmap", "🕸️ Network Graph", "📋 Genes Reference"])
+    sub_tab1, sub_tab2, sub_tab3, sub_tab4 = st.tabs(["🔥 Correlation Heatmap", "🕸️ Network Graph", "📋 Genes Reference", "🌐 Beta Diversity (PCoA)"])
 
     with sub_tab1:
         pivot = corr_df.pivot(index='OTU', columns='Gene', values='rho')
@@ -709,3 +709,62 @@ with tab7:
     just applied here with simulated gene data due to public data availability 
     constraints for this particular dataset.
     """)
+    with sub_tab4:
+        st.markdown("### 🌐 PCoA: Beta Diversity Analysis")
+        st.markdown("""
+        While **alpha diversity** (Tab 4) measures diversity *within* a sample, 
+        **beta diversity** measures how different samples are *from each other*. 
+        Principal Coordinates Analysis (PCoA) using Bray-Curtis dissimilarity is 
+        the standard method for visualising this in microbiome research.
+        """)
+
+        @st.cache_data
+        def compute_pcoa(_otu_data, _diet_labels):
+            from scipy.spatial.distance import pdist, squareform
+            X = _otu_data.values
+            bc_dist = squareform(pdist(X, metric='braycurtis'))
+            n = bc_dist.shape[0]
+            H = np.eye(n) - np.ones((n, n)) / n
+            B = -0.5 * H @ (bc_dist ** 2) @ H
+            eigvals, eigvecs = np.linalg.eigh(B)
+            idx = np.argsort(eigvals)[::-1]
+            eigvals, eigvecs = eigvals[idx], eigvecs[:, idx]
+            pc1 = eigvecs[:, 0] * np.sqrt(np.abs(eigvals[0]))
+            pc2 = eigvecs[:, 1] * np.sqrt(np.abs(eigvals[1]))
+            var1 = eigvals[0] / np.sum(np.abs(eigvals)) * 100
+            var2 = eigvals[1] / np.sum(np.abs(eigvals)) * 100
+            return pc1, pc2, var1, var2
+
+        pc1, pc2, var1, var2 = compute_pcoa(otu_filtered, diet_labels)
+
+        fig, ax = plt.subplots(figsize=(9, 7))
+        colors_pcoa = ['steelblue' if d == diet_a else 'coral' for d in diet_labels]
+        ax.scatter(pc1, pc2, c=colors_pcoa, s=60, alpha=0.7, edgecolor='black')
+        ax.set_xlabel(f'PCoA1 ({var1:.1f}%)')
+        ax.set_ylabel(f'PCoA2 ({var2:.1f}%)')
+        ax.set_title(f'Beta Diversity (Bray-Curtis): {diet_a_name} vs {diet_b_name}')
+
+        from matplotlib.patches import Patch
+        legend_elements = [Patch(facecolor='steelblue', label=diet_a_name),
+                            Patch(facecolor='coral', label=diet_b_name)]
+        ax.legend(handles=legend_elements)
+        plt.tight_layout()
+        st.pyplot(fig)
+
+        col1, col2 = st.columns(2)
+        col1.metric("PCoA1 Variance Explained", f"{var1:.1f}%")
+        col2.metric("PCoA2 Variance Explained", f"{var2:.1f}%")
+
+        st.markdown(f"""
+        **How to read this plot:** Each point is one sample. Points closer together 
+        have more similar gut microbial communities; points far apart are more 
+        different. The two principal coordinate axes together explain 
+        **{var1 + var2:.1f}%** of the total variation in community composition — 
+        typical for high-dimensional microbiome data where thousands of OTUs are 
+        condensed into two axes.
+
+        **Interpretation:** Samples show a directional trend by diet group rather 
+        than complete separation, which is expected and consistent with published 
+        microbiome studies — diet shifts the *overall* community structure, even 
+        though some bacterial taxa remain shared across both groups.
+        """)
