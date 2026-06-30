@@ -31,6 +31,18 @@ def load_data():
     return df, otu_top50
 
 df, otu_top50 = load_data()
+# ── Diet label mapping ─────────────────────────────────────────────
+diet_names = {
+    0: "LF/PP (Low-Fat, Plant Polysaccharide)",
+    1: "Western (High-Fat, High-Sugar)",
+    2: "Transitional Diet 2",
+    3: "Transitional Diet 3",
+    4: "Transitional Diet 4",
+    5: "Transitional Diet 5"
+}
+
+def diet_label(code):
+    return diet_names.get(code, f"Diet {code}")
 
 # ── Taxonomy dictionary ────────────────────────────────────────────
 taxonomy = {
@@ -57,8 +69,16 @@ taxonomy = {
 # ── Sidebar ────────────────────────────────────────────────────────
 st.sidebar.header("⚙️ Controls")
 diet_options = sorted(df['Diet'].unique().tolist())
-diet_a = st.sidebar.selectbox("Select Diet Group A", diet_options, index=0)
-diet_b = st.sidebar.selectbox("Select Diet Group B", diet_options, index=1)
+diet_a = st.sidebar.selectbox(
+    "Select Diet Group A", diet_options, index=0,
+    format_func=diet_label
+)
+diet_b = st.sidebar.selectbox(
+    "Select Diet Group B", diet_options, index=1,
+    format_func=diet_label
+)
+diet_a_name = diet_label(diet_a)
+diet_b_name = diet_label(diet_b)
 top_n = st.sidebar.slider("Number of top OTUs to show", 5, 50, 20)
 
 st.sidebar.markdown("---")
@@ -85,8 +105,8 @@ diet_labels = df['Diet'][mask].reset_index(drop=True)
 # ── Summary metrics ────────────────────────────────────────────────
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Total Samples", df.shape[0])
-col2.metric(f"Diet {diet_a} Samples", (df['Diet'] == diet_a).sum())
-col3.metric(f"Diet {diet_b} Samples", (df['Diet'] == diet_b).sum())
+col2.metric(f"{diet_label(diet_a)} Samples", (df['Diet'] == diet_a).sum())
+col3.metric(f"{diet_label(diet_b)} Samples", (df['Diet'] == diet_b).sum())
 col4.metric("OTUs Analysed", top_n)
 
 st.markdown("---")
